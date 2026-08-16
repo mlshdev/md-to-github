@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Markdown preview</title>
+    <link rel="stylesheet" href="/app.css?v=2" />
+    <script type="module" src="/app.js?v=2"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="library">
+        <header class="library-header">
+          <div class="brand-mark" aria-hidden="true">M</div>
+          <div>
+            <strong>Markdown viewer</strong>
+            <span>Local and mounted files</span>
+          </div>
+        </header>
+
+        <button class="select-button" type="button" data-select-files>Select .md files</button>
+        <input id="file-input" type="file" accept=".md,.markdown,text/markdown" multiple hidden />
+
+        <section class="library-section">
+          <header class="section-heading">
+            <span>Mounted files <span id="mounted-count" class="count">0</span></span>
+            <button id="scan" class="icon-button" type="button" title="Rescan mounted directory">Rescan</button>
+          </header>
+          <div id="mounted-list" class="document-list"></div>
+          <p id="mounted-empty" class="section-empty">No Markdown files mounted in /data</p>
+        </section>
+
+        <section id="local-section" class="library-section" hidden>
+          <header class="section-heading"><span>Local files</span></header>
+          <div id="local-list" class="document-list"></div>
+        </section>
+
+        <div class="drop-note">You can drop .md files anywhere on this page.</div>
+      </aside>
+
+      <main class="viewer">
+        <header class="file-bar">
+          <div class="file-details">
+            <span id="file-name">No document selected</span>
+            <span id="file-meta">Select or drop a Markdown file</span>
+          </div>
+          <button id="reload" class="secondary-button" type="button" disabled>Reload</button>
+        </header>
+
+        <section class="document-frame">
+          <div id="empty" class="empty-state">
+            <div class="empty-icon" aria-hidden="true">.md</div>
+            <h1>Open a Markdown document</h1>
+            <p>Select one or more files, drag them into this window, or mount a directory at /data.</p>
+            <button class="select-button compact" type="button" data-select-files>Select files</button>
+          </div>
+          <article id="document" class="markdown-body" aria-live="polite" hidden></article>
+          <pre id="error" class="error" role="alert" hidden></pre>
+        </section>
+      </main>
+    </div>
+
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <div>
+        <strong>Drop Markdown files to open</strong>
+        <span>Multiple .md files are supported</span>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+# Public preview labels announced 2026-06-11; actionlint's bundled list lags behind.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

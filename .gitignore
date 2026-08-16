@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+
+# Local agent and tooling state
+.claude/
+.playwright-mcp/
+.serena/
+*.log

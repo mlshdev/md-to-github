@@ -1,0 +1,140 @@
+name: Dependency update
+
+# Moves every entry in package.json to its newest published release, verifies
+# the project still typechecks, tests and builds, then rebuilds and republishes.
+# The rebuild is a direct workflow_call rather than a push trigger, because
+# pushes made with GITHUB_TOKEN do not start new workflow runs.
+on:
+  schedule:
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Report available updates without committing or rebuilding."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-update
+  cancel-in-progress: false
+
+env:
+  # Ignore releases younger than three days so a compromised package cannot be
+  # pulled in by an unattended update before it is yanked.
+  MINIMUM_RELEASE_AGE: "259200"
+
+jobs:
+  scan:
+    name: Scan package.json dependencies
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      updated: ${{ steps.commit.outputs.updated }}
+      revision: ${{ steps.commit.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read the Bun version pinned in the Dockerfile
+        id: toolchain
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's|^FROM docker\.io/oven/bun:\([0-9][0-9A-Za-z.-]*\)@sha256:.*|\1|p' Dockerfile | head -n 1)"
+          test -n "${version}"
+          printf 'bun=%s\n' "${version}" >> "${GITHUB_OUTPUT}"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.toolchain.outputs.bun }}
+
+      - run: bun install --frozen-lockfile
+
+      - name: Update every dependency to its newest release
+        id: scan
+        run: |
+          set -euo pipefail
+          bun update --latest --minimum-release-age="${MINIMUM_RELEASE_AGE}"
+          if git diff --quiet -- package.json bun.lock; then
+            printf 'updated=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'All dependencies are already current.\n' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          printf 'updated=true\n' >> "${GITHUB_OUTPUT}"
+          {
+            printf '## Dependency update\n\n```diff\n'
+            git diff --unified=0 -- package.json
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # Validate before committing so a breaking release never lands on main.
+      - name: Verify the updated dependency set
+        if: steps.scan.outputs.updated == 'true'
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun run check
+          bun test
+          bun run build
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+
+      - name: Build the updated image
+        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: markdown-mermaid-renderer:dependency-update
+          cache-from: type=gha,scope=linux-arm64
+          cache-to: type=gha,scope=linux-arm64,mode=max
+
+      - name: Smoke test the updated image
+        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+        run: .github/scripts/smoke-test.sh markdown-mermaid-renderer:dependency-update
+
+      - name: Commit the new dependency set
+        id: commit
+        run: |
+          set -euo pipefail
+          if [ "${UPDATED}" != "true" ] || [ "${DRY_RUN}" = "true" ]; then
+            printf 'updated=false\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json bun.lock
+          git commit -m "deps: update package.json dependencies to their newest releases"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+          {
+            printf 'updated=true\n'
+            printf 'revision=%s\n' "$(git rev-parse HEAD)"
+          } >> "${GITHUB_OUTPUT}"
+        env:
+          UPDATED: ${{ steps.scan.outputs.updated }}
+          DRY_RUN: ${{ inputs.dry-run }}
+
+  rebuild:
+    name: Rebuild and publish
+    needs: scan
+    if: needs.scan.outputs.updated == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.scan.outputs.revision }}
+      reason: dependency update

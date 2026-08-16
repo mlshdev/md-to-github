@@ -1,0 +1,26 @@
+.DS_Store
+*.log
+*.png
+
+# Version control and CI, never part of the image
+.git
+.gitignore
+.dockerignore
+.github
+
+# Local agent and tooling state
+.claude
+.playwright-mcp
+.serena
+
+# Build inputs that the image builds for itself
+node_modules
+dist
+coverage
+
+# Not copied by the Dockerfile
+AGENTS.md
+README.md
+compose.yaml
+example
+tests
