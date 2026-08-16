@@ -97,6 +97,45 @@ Every successful build on `main` publishes four tags for the same digest:
 
 `package.json` `version` is the release identity; the date and run number make each build individually addressable even when several builds share a version. Deployments should pin a build or commit tag — `latest` is a pointer, not a release.
 
+### Run the published image
+
+No local build needed — pull and run the image from GHCR directly:
+
+```sh
+docker pull ghcr.io/<owner>/<repo>:latest
+docker run --rm \
+  --name markdown-preview \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  -p 3000:3000 \
+  -v "/absolute/path/to/your/docs:/data:ro" \
+  ghcr.io/<owner>/<repo>:latest
+```
+
+Open <http://localhost:3000>. Drop the `-v` mount to run without mounted documents; the browser's **Select .md files** and drag-and-drop still work.
+
+Or with Docker Compose:
+
+```yaml
+services:
+  markdown-preview:
+    image: ghcr.io/<owner>/<repo>:latest
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    ports:
+      - "3000:3000"
+    volumes:
+      - "/absolute/path/to/your/docs:/data:ro"
+```
+
+```sh
+docker compose up -d
+```
+
+Replace `<owner>/<repo>` with this repository's GitHub path. `latest` always points at the newest `main` build; pin a `<package version>`, `<package version>-<date>.<run>`, or `sha-<commit>` tag instead for a reproducible deployment — see the tag table above.
+
 ## Automated rebuilds
 
 Three workflows keep the published image current. Both scanners commit to `main` and then call the build workflow directly, because a push made with `GITHUB_TOKEN` does not start a new workflow run.
