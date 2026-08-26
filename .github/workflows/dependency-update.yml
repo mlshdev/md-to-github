@@ -75,8 +75,14 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       # Validate before committing so a breaking release never lands on main.
+      # continue-on-error: an incompatible release (e.g. an upstream package
+      # dropping its own type declarations) is an expected, handled outcome,
+      # not a CI infrastructure failure — the job should stay green and just
+      # skip the update, not red-X every night until upstream catches up.
       - name: Verify the updated dependency set
+        id: verify
         if: steps.scan.outputs.updated == 'true'
+        continue-on-error: true
         run: |
           set -euo pipefail
           bun install --frozen-lockfile
@@ -84,11 +90,18 @@ jobs:
           bun test
           bun run build
 
+      - name: Report a rejected update
+        if: steps.scan.outputs.updated == 'true' && steps.verify.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          printf '## Dependency update rejected\n\nThe newest releases failed typecheck/test/build, so main was left untouched. See the "Verify the updated dependency set" step for details.\n' >> "${GITHUB_STEP_SUMMARY}"
+          git checkout -- package.json bun.lock
+
       - uses: docker/setup-buildx-action@v4
-        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+        if: steps.scan.outputs.updated == 'true' && steps.verify.outcome == 'success' && !inputs.dry-run
 
       - name: Build the updated image
-        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+        if: steps.scan.outputs.updated == 'true' && steps.verify.outcome == 'success' && !inputs.dry-run
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -102,14 +115,14 @@ jobs:
           cache-to: type=gha,scope=linux-arm64,mode=max
 
       - name: Smoke test the updated image
-        if: steps.scan.outputs.updated == 'true' && !inputs.dry-run
+        if: steps.scan.outputs.updated == 'true' && steps.verify.outcome == 'success' && !inputs.dry-run
         run: .github/scripts/smoke-test.sh markdown-mermaid-renderer:dependency-update
 
       - name: Commit the new dependency set
         id: commit
         run: |
           set -euo pipefail
-          if [ "${UPDATED}" != "true" ] || [ "${DRY_RUN}" = "true" ]; then
+          if [ "${UPDATED}" != "true" ] || [ "${VERIFIED}" != "true" ] || [ "${DRY_RUN}" = "true" ]; then
             printf 'updated=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -125,6 +138,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
         env:
           UPDATED: ${{ steps.scan.outputs.updated }}
+          VERIFIED: ${{ steps.verify.outcome == 'success' }}
           DRY_RUN: ${{ inputs.dry-run }}
 
   rebuild:
